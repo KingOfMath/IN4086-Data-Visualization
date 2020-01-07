@@ -1,0 +1,897 @@
+//Map:
+//default : provinces, total crime
+//region:  major cities/major cities
+//crime: 10 major crimes and other
+
+//Dynamic ranking: 
+//if default: nothing happened
+//else if: click one area: top 10 crimes
+
+
+var predata;
+var data;
+var flag;
+var dataSet = d3.csv("Dataset.csv");
+var provinceDataSet = d3.csv("Provinces.csv");
+
+// load data
+Promise.all([
+    dataSet, provinceDataSet
+])
+    .then(function (preedata) {
+
+        predata = preedata[0].concat(preedata[1]);
+
+    });
+
+
+/**
+ * start ranking
+ */
+function ranking_start() {
+
+    // clear svg
+    $("#svg").empty();
+    $("#svgrank").empty();
+    document.getElementById("legend_corr_inner").style.display = 'none';
+
+    // select city
+    var city = $("#city option:selected");
+    var province = $("#province option:selected");
+    var area;
+    if (city.val() != "0") area = city.text();
+    else if (province.val() != "0") area = province.text();
+    else area = "Amsterdam";
+
+    /**
+     * check the correctness of type
+     * @param d
+     * @returns {boolean}
+     */
+    function checktype(d) {
+        return d.name === area;
+    }
+
+    // filter data
+    var data = predata.filter(checktype);
+    for (var i = data.length; i--;) {
+        if (data[i].date === "2012") data.splice(i, 1);
+        else if (data[i].date === "2013") data.splice(i, 1);
+        else if (data[i].date === "2014") data.splice(i, 1);
+        else if (data[i].date === "2015") data.splice(i, 1);
+        else if (data[i].date === "2016") data.splice(i, 1);
+        else if (data[i].date === "2017") data.splice(i, 1);
+        else if (data[i].date === "2018") data.splice(i, 1);
+        if (data[i].type === "Totaal misdrijven") data.splice(i, 1);
+    }
+
+    //draw
+    try {
+        draw(data);
+    } catch (error) {
+        alert(error);
+    }
+
+}
+
+
+/**
+ * draw ranking
+ * @param data
+ */
+function draw(data) {
+
+    var date = [];
+    data.forEach(element => {
+        if (date.indexOf(element["date"]) == -1) {
+            date.push(element["date"]);
+        }
+    });
+    let rate = [];
+    var auto_sort = config.auto_sort;
+    if (auto_sort) {
+        var time = date.sort((x, y) => new Date(x) - new Date(y));
+    } else {
+        var time = date;
+    }
+    var use_semilogarithmic_coordinate = config.use_semilogarithmic_coordinate;
+    var big_value = config.big_value;
+    var divide_by = config.divide_by;
+    var divide_color_by = config.divide_color_by;
+    var name_list = [];
+    var changeable_color = config.changeable_color;
+    var divide_changeable_color_by_type = config.divide_changeable_color_by_type;
+    data
+        .sort((a, b) => Number(b.value) - Number(a.value))
+        .forEach(e => {
+            if (name_list.indexOf(e.type) == -1) {//
+                name_list.push(e.type);//
+            }
+        });
+    var baseTime = 3000;
+
+    /**
+     * choose color
+     * @param d
+     * @returns {string|*}
+     */
+    function getColor(d) {
+        var r = 0.0;
+        if (changeable_color) {
+            var colorRange = d3.interpolateCubehelix(config.color_range[0], config.color_range[1]);
+            if (divide_changeable_color_by_type && d["name"] in config.color_ranges) {
+                var colorRange = d3.interpolateCubehelix(config.color_ranges[d["name"]][0], config.color_ranges[d["name"]][1]);
+            }
+            var v =
+                Math.abs(rate[d.type] - rate["MIN_RATE"]) /
+                (rate["MAX_RATE"] - rate["MIN_RATE"]);
+            if (isNaN(v) || v == -1) {
+                return colorRange(0.6);
+            }
+            return colorRange(v);
+        }
+
+        if (d[divide_color_by] in config.color)
+            return config.color[d[divide_color_by]];
+        else {
+            return d3.schemeCategory10[
+                Math.floor(d[divide_color_by].charCodeAt() % 10)
+                ];
+        }
+    }
+
+    var showMessage = config.showMessage;
+    var allow_up = config.allow_up;
+    var always_up = config.always_up;
+    var interval_time = config.interval_time;
+    var text_y = config.text_y;
+    var itemLabel = config.itemLabel;
+    var typeLabel = config.typeLabel;
+    var display_barInfo = config.display_barInfo;
+
+    // show type
+    if (config.use_type_info) {
+        var use_type_info = false;
+    } else if (divide_by != "name") {
+        var use_type_info = false;
+    } else {
+        var use_type_info = false;
+    }
+
+    var use_counter = config.use_counter;
+    // interval date
+    var step = config.step;
+    var long = config.long;
+    var format = config.format;
+    var left_margin = config.left_margin;
+    var right_margin = config.right_margin;
+    var top_margin = config.top_margin;
+    var bottom_margin = config.bottom_margin;
+    var timeFormat = config.timeFormat;
+    var item_x = config.item_x;
+    var max_number = config.max_number;
+    var reverse = config.reverse;
+    var text_x = config.text_x;
+    var offset = config.offset;
+    var animation = config.animation;
+    var deformat = config.deformat;
+    config.imgs = Object.assign(config.imgs, external_imgs);
+
+    // part of d3 svg
+    const margin = {
+        left: left_margin,
+        right: right_margin,
+        top: top_margin,
+        bottom: bottom_margin
+    };
+    var background_color = config.background_color;
+    d3.select("body").attr("style", "background:" + background_color);
+    var enter_from_0 = config.enter_from_0;
+    interval_time /= 3;
+    var lastData = [];
+    var currentdate = time[0].toString();
+    var currentData = [];
+    var lastname;
+    const svg = d3.select("svg");
+    const width = svg.attr("width");
+    const height = svg.attr("height");
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom - 32;
+    const xValue = d => Number(d.value);
+    const yValue = d => d.type;//
+
+    const g = svg
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+    const xAxisG = g
+        .append("g")
+        .attr("transform", `translate(0, ${innerHeight})`);
+    const yAxisG = g.append("g");
+
+    xAxisG
+        .append("text")
+        .attr("class", "axis-label")
+        .attr("x", innerWidth / 2)
+        .attr("y", 100);
+
+    var xScale = d3.scaleLinear();
+    if (use_semilogarithmic_coordinate) {
+        xScale = d3.scalePow().exponent(0.5);
+    } else {
+        xScale = d3.scaleLinear();
+    }
+    const yScale = d3
+        .scaleBand()
+        .paddingInner(0.3)
+        .paddingOuter(0);
+
+    const xTicks = 10;
+    const xAxis = d3
+        .axisBottom()
+        .scale(xScale)
+        .ticks(xTicks)
+        .tickPadding(20)
+        .tickFormat(d => {
+            if (d <= 0) {
+                return "";
+            }
+            return d;
+        })
+        .tickSize(-innerHeight);
+
+    const yAxis = d3
+        .axisLeft()
+        .scale(yScale)
+        .tickPadding(5)
+        .tickSize(-innerWidth);
+
+    var dateLabel_switch = config.dateLabel_switch;
+    var dateLabel_x = config.dateLabel_x;
+    var dateLabel_y = config.dateLabel_y;
+
+    //dateLabel position
+    if (dateLabel_x == null || dateLabel_y == null) {
+        dateLabel_x = innerWidth;
+        dateLabel_y = innerHeight;
+    } // if is hidden
+    if (dateLabel_switch == false) {
+        dateLabel_switch = "hidden";
+    } else {
+        dateLabel_switch = "visible";
+    }
+
+    var dateLabel = g
+        .insert("text")
+        .data(currentdate)
+        .attr("class", "dateLabel")
+        .attr("style:visibility", dateLabel_switch)
+        .attr("x", dateLabel_x)
+        .attr("y", dateLabel_y)
+        .attr("text-anchor", function () {
+            return "end";
+        })
+        .text(currentdate);
+
+    var topLabel = g
+        .insert("text")
+        .attr("class", "topLabel")
+        .attr("x", item_x)
+        .attr("y", text_y);
+
+    /**
+     * sort data
+     */
+    function dataSort() {
+        if (reverse) {
+            currentData.sort(function (a, b) {
+                if (Number(a.value) == Number(b.value)) {
+                    var r1 = 0;
+                    var r2 = 0;
+                    for (let index = 0; index < a.type.length; index++) {//
+                        r1 = r1 + a.type.charCodeAt(index);//
+                    }
+                    for (let index = 0; index < b.type.length; index++) {//
+                        r2 = r2 + b.type.charCodeAt(index);//
+                    }
+                    return r2 - r1;
+                } else {
+                    return Number(a.value) - Number(b.value);
+                }
+            });
+        } else {
+            currentData.sort(function (a, b) {
+                if (Number(a.value) == Number(b.value)) {
+                    var r1 = 0;
+                    var r2 = 0;
+                    for (let index = 0; index < a.type.length; index++) {//
+                        r1 = r1 + a.type.charCodeAt(index);//
+                    }
+                    for (let index = 0; index < b.type.length; index++) {//
+                        r2 = r2 + b.type.charCodeAt(index);//
+                    }
+                    return r2 - r1;
+                } else {
+                    return Number(b.value) - Number(a.value);
+                }
+            });
+        }
+    }
+
+    /**
+     * get data
+     * @param date
+     */
+    function getCurrentData(date) {
+        rate = [];
+        currentData = [];
+        indexList = [];
+
+        data.forEach(element => {
+            if (element["date"] == date && parseFloat(element["value"]) != 0) {
+                if (element.type.length > config.bar_name_max) {//
+                    tail = "...";
+                } else {
+                    tail = "";
+                }
+                element.type = element.type.slice(0, config.bar_name_max - 1) + tail;//
+                currentData.push(element);
+            }
+        });
+
+        rate["MAX_RATE"] = 0;
+        rate["MIN_RATE"] = 1;
+        currentData.forEach(e => {
+            _cName = e.type;//
+            lastData.forEach(el => {
+                if (el.type == e.type) {//
+                    rate[e.type] = Number(Number(e.value) - Number(el.value));//
+                }
+            });
+            if (rate[e.type] == undefined) {//
+                rate[e.type] = rate["MIN_RATE"];//
+            }
+            if (rate[e.type] > rate["MAX_RATE"]) {//
+                rate["MAX_RATE"] = rate[e.type];//
+            } else if (rate[e.type] < rate["MIN_RATE"]) {//
+                rate["MIN_RATE"] = rate[e.type];//
+            }
+        });
+        currentData = currentData.slice(0, max_number);
+        dataSort();
+
+        d3.transition("2")
+            .each(redraw)
+            .each(change);
+        lastData = currentData;
+    }
+
+    if (showMessage) {
+        // text on left
+        var topInfo = g
+            .insert("text")
+            .attr("class", "growth")
+            .attr("x", 0)
+            .attr("y", text_y)
+            .text(itemLabel);
+
+        // text on right
+        g.insert("text")
+            .attr("class", "growth")
+            .attr("x", text_x)
+            .attr("y", text_y)
+            .text(typeLabel);
+
+        // top dates
+        if (use_counter == true) {
+            var days = g
+                .insert("text")
+                .attr("class", "days")
+                .attr("x", text_x + offset)
+                .attr("y", text_y);
+        } else {
+            // top types
+            if (use_type_info == true) {
+                var top_type = g
+                    .insert("text")
+                    .attr("class", "days")
+                    .attr("x", text_x + offset)
+                    .attr("y", text_y);
+            }
+        }
+    }
+
+    var lastname;
+    var counter = {
+        value: 1
+    };
+
+    var avg = 0;
+    var enter_from_now = true;
+
+    /**
+     * redraw animation
+     */
+    function redraw() {
+        if (currentData.length == 0) return;
+
+        if (big_value) {
+            xScale
+                .domain([
+                    2 * d3.min(currentData, xValue) - d3.max(currentData, xValue),
+                    d3.max(currentData, xValue) + 10
+                ])
+                .range([0, innerWidth]);
+        } else {
+            xScale
+                .domain([0, d3.max(currentData, xValue) + 1])
+                .range([0, innerWidth]);
+        }
+        if (auto_sort) {
+            dateLabel
+                .data(currentData)
+                .transition()
+                .duration(baseTime * interval_time)
+                .ease(d3.easeLinear)
+                .tween("text", function (d) {
+                    var self = this;
+                    var i = d3.interpolateDate(
+                        new Date(self.textContent),
+                        new Date(d.date)
+                    );
+                    return function (t) {
+                        var dateformat = d3.timeFormat(timeFormat);
+                        self.textContent = dateformat(i(t));
+                    };
+                });
+        } else {
+            dateLabel.text(currentdate);
+        }
+        var bar = g.selectAll(".bar").data(currentData, function (d) {
+            return d.type;//
+        });
+
+        if (showMessage) {
+            // text on top
+            topLabel.data(currentData).text(function (d) {
+                if (lastname == d.type) {//
+                    counter.value = counter.value + step;
+                } else {
+                    counter.value = 1;
+                }
+                lastname = d.type;//
+                if (d.type.length > 24) return d.type.slice(0, 23) + "...";//
+                return d.name;//??
+            });
+            if (use_counter == true) {
+                // continuously update time
+                days
+                    .data(currentData)
+                    .transition()
+                    .duration(baseTime * interval_time)
+                    .ease(d3.easeLinear)
+                    .tween("text", function (d) {
+                        var self = this;
+                        var i = d3.interpolate(self.textContent, counter.value),
+                            prec = (counter.value + "").split("."),
+                            round = prec.length > 1 ? Math.pow(10, prec[1].length) : 1;
+
+                        return function (t) {
+                            self.textContent = d3.format(format)(
+                                Math.round(i(t) * round) / round
+                            );
+                        };
+                    });
+            } else if (use_type_info == true) {
+                // update type
+                top_type.data(currentData).text(function (d) {
+                    return d["type"];//
+                });
+            }
+        }
+
+        var barEnter = bar
+            .enter()
+            .insert("g", ".axis")
+            .attr("class", "bar")
+            .attr("transform", function (d) {
+                return "translate(0," + yScale(yValue(d)) + ")";
+            });
+
+        // use img in config
+        if (config.use_img) {
+            barEnter
+                .append("defs")
+                .append("pattern")
+                .attr("id", d => d.type)//
+                .attr("width", "100%")
+                .attr("height", "100%")
+                .append("image")
+                .attr("x", "0")
+                .attr("y", "0")
+                .attr("width", "40")
+                .attr("height", "40")
+                .attr("href", d => config.imgs[d.type]);//
+
+            barEnter
+                .append("circle")
+                .attr("fill-opacity", 0)
+                .attr("cy", 63)
+                .attr('fill', d => "url(#" + encodeURIComponent(d.type).replace("'", "%27").replace("(", "%28").replace(")", "%29") + ")")//
+                .attr("stroke-width", "0px")
+                .transition("a")
+                .delay(500 * interval_time)
+                .duration(2490 * interval_time)
+                .attr("stroke", d => getColor(d))
+                .attr("stroke-width", "4px")
+                .attr("x", -16)
+                .attr("cx", -22)
+                .attr("cy", 13)
+                .attr("r", 40 / 2)
+                .attr("fill-opacity", 1);
+        }
+        barEnter
+            .append("rect")
+            .attr("width", function (d) {
+                if (enter_from_0) {
+                    return 0;
+                } else {
+                    return xScale(currentData[currentData.length - 1].value);
+                }
+            })
+            .attr("fill-opacity", 0)
+            .attr("height", 16) //bar height
+            .attr("y", 50)
+            .style("fill", d => getColor(d))
+            .transition("a")
+            .delay(500 * interval_time)
+            .duration(2490 * interval_time)
+            .attr("y", 0)
+            .attr("width", d => xScale(xValue(d)))
+            .attr("fill-opacity", 1);
+
+        if (config.rounded_rectangle) {
+            d3.selectAll("rect").attr("rx", 13);
+        }
+        if (config.showLabel == true) {
+            barEnter
+                .append("text")
+                .attr("y", 50)
+                .attr("fill-opacity", 0)
+                .style("fill", d => getColor(d))
+                .transition("2")
+                .delay(500 * interval_time)
+                .duration(2490 * interval_time)
+                .attr("fill-opacity", 1)
+                .attr("y", 0)
+                .attr("class", function (d) {
+                    return "label ";
+                })
+                .attr("x", config.labelx)
+                .attr("y", 20)
+                .attr("text-anchor", "end")
+                .text(function (d) {
+                    if (long) {
+                        return "";
+                    }
+                    return d.type;//
+                });
+        }
+
+        // text on bar
+        var barInfo = barEnter
+            .append("text")
+            .attr("x", function (d) {
+                if (long) return 10;
+                if (enter_from_0) {
+                    return 0;
+                } else {
+                    return xScale(currentData[currentData.length - 1].value);
+                }
+            })
+            .attr("stroke", d => getColor(d))
+            .attr("class", function () {
+                return "barInfo";
+            })
+            .attr("y", 50)
+            .attr("stroke-width", "0px")
+            .attr("fill-opacity", 0)
+            .transition()
+            .delay(500 * interval_time)
+            .duration(2490 * interval_time)
+            .text(function (d) {
+                if (use_type_info) {
+                    return d[divide_by] + "-" + d.type;//
+                }
+                return d.type;//
+            })
+            .attr("x", d => {
+                if (long) return 10;
+                return xScale(xValue(d)) - 10;
+            })
+            .attr("fill-opacity", function (d) {
+                if (xScale(xValue(d)) - 10 < display_barInfo) {
+                    return 0;
+                }
+                return 1;
+            })
+            .attr("y", 2)
+            .attr("dy", ".5em")
+            .attr("text-anchor", function () {
+                if (long) return "start";
+                return "end";
+            })
+            .attr("stroke-width", function (d) {
+                if (xScale(xValue(d)) - 10 < display_barInfo) {
+                    return "0px";
+                }
+                return "1px";
+            });
+        if (long) {
+            barInfo.tween("text", function (d) {
+                var self = this;
+                self.textContent = d.value;
+                var i = d3.interpolate(self.textContent, Number(d.value)),
+                    prec = (Number(d.value) + "").split("."),
+                    round = prec.length > 1 ? Math.pow(10, prec[1].length) : 1;
+                return function (t) {
+                    self.textContent =
+                        //d[divide_by] +
+                        //"-" +
+                        d.type +//
+                        "  data:" +
+                        d3.format(format)(Math.round(i(t) * round) / round);
+                };
+            });
+        }
+        if (!long) {
+            barEnter
+                .append("text")
+                .attr("x", function () {
+                    if (long) {
+                        return 10;
+                    }
+                    if (enter_from_0) {
+                        return 0;
+                    } else {
+                        return xScale(currentData[currentData.length - 1].value);
+                    }
+                })
+                .attr("y", 50)
+                .attr("fill-opacity", 0)
+                .style("fill", d => getColor(d))
+                .transition()
+                .duration(2990 * interval_time)
+                .tween("text", function (d) {
+                    var self = this;
+                    self.textContent = d.value * 0.9;
+                    var i = d3.interpolate(self.textContent, Number(d.value)),
+                        prec = (Number(d.value) + "").split("."),
+                        round = prec.length > 1 ? Math.pow(10, prec[1].length) : 1;
+                    return function (t) {
+                        self.textContent = d3.format(format)(
+                            Math.round(i(t) * round) / round
+                        ) + config.postfix;
+                    };
+                })
+                .attr("fill-opacity", 1)
+                .attr("y", 0)
+                .attr("class", function (d) {
+                    return "value";
+                })
+                .attr("x", d => {
+                    return xScale(xValue(d)) + 10;
+                })
+                .attr("y", 22);
+        }
+        var barUpdate = bar
+            .transition("2")
+            .duration(2990 * interval_time)
+            .ease(d3.easeLinear);
+
+        barUpdate
+            .select("rect")
+            .style("fill", d => getColor(d))
+            .attr("width", d => xScale(xValue(d)));
+        if (config.showLabel == true) {
+            barUpdate
+                .select(".label")
+                .attr("class", function (d) {
+                    return "label ";
+                })
+                .style("fill", d => getColor(d))
+                .attr("width", d => xScale(xValue(d)));
+        }
+        if (!long) {
+            barUpdate
+                .select(".value")
+                .attr("class", function (d) {
+                    return "value";
+                })
+                .style("fill", d => getColor(d))
+                .attr("width", d => xScale(xValue(d)));
+        }
+        barUpdate.select(".barInfo").attr("stroke", function (d) {
+            return getColor(d);
+        });
+
+        if (config.use_img) {
+            barUpdate.select("circle").attr("stroke", function (d) {
+                return getColor(d);
+            });
+        }
+
+        var barInfo = barUpdate
+            .select(".barInfo")
+            .text(function (d) {
+                if (use_type_info) {
+                    return d[divide_by] + "-" + d.type;//
+                }
+                return d.type;//
+            })
+            .attr("x", d => {
+                if (long) return 10;
+                return xScale(xValue(d)) - 10;
+            })
+            .attr("fill-opacity", function (d) {
+                if (xScale(xValue(d)) - 10 < display_barInfo) {
+                    return 0;
+                }
+                return 1;
+            })
+            .attr("stroke-width", function (d) {
+                if (xScale(xValue(d)) - 10 < display_barInfo) {
+                    return "0px";
+                }
+                return "1px";
+            });
+
+        if (long) {
+            barInfo.tween("text", function (d) {
+                var self = this;
+                var str = d[divide_by] + "-" + d.type + "  数值:";//
+
+                var i = d3.interpolate(
+                    self.textContent.slice(str.length, 99),
+                    Number(d.value)
+                    ),
+                    prec = (Number(d.value) + "").split("."),
+                    round = prec.length > 1 ? Math.pow(10, prec[1].length) : 1;
+                return function (t) {
+                    self.textContent =
+                        //d[divide_by] +
+                        //"-" +
+                        d.type +//
+                        "  数值:" +
+                        d3.format(format)(Math.round(i(t) * round) / round);
+                };
+            });
+        }
+        if (!long) {
+            barUpdate
+                .select(".value")
+                .tween("text", function (d) {
+                    var self = this;
+
+                    // if postfix is blank, do not slice.
+                    if (config.postfix == "") {
+                        var i = d3.interpolate(self.textContent, Number(d.value));
+                    } else {
+                        var i = d3.interpolate(self.textContent.slice(0, -config.postfix.length), Number(d.value));
+                    }
+
+                    var i = d3.interpolate(deformat(self.textContent, config.postfix), Number(d.value))
+
+                    var prec = (Number(d.value) + "").split("."),
+                        round = prec.length > 1 ? Math.pow(10, prec[1].length) : 1;
+                    // d.value = self.textContent
+                    return function (t) {
+                        self.textContent = d3.format(format)(
+                            Math.round(i(t) * round) / round
+                        ) + config.postfix;
+                        // d.value = self.textContent
+                    };
+                })
+                .duration(2990 * interval_time)
+                .attr("x", d => xScale(xValue(d)) + 10);
+        }
+        avg =
+            (Number(currentData[0]["value"]) +
+                Number(currentData[currentData.length - 1]["value"])) /
+            2;
+
+        var barExit = bar
+            .exit()
+            .attr("fill-opacity", 1)
+            .transition()
+            .duration(2500 * interval_time);
+        barExit
+            .attr("transform", function (d) {
+                if (always_up) {
+                    return "translate(0," + "-100" + ")";
+                }
+                if (Number(d.value) > avg && allow_up) {
+                    return "translate(0," + "-100" + ")";
+                }
+                return "translate(0," + "1000" + ")";
+            })
+            .remove()
+            .attr("fill-opacity", 0);
+        barExit
+            .select("rect")
+            .attr("fill-opacity", 0)
+            .attr("width", () => {
+                if (always_up) return xScale(0);
+                return xScale(currentData[currentData.length - 1]["value"])
+            })
+        if (!long) {
+            barExit
+                .select(".value")
+                .attr("fill-opacity", 0)
+                .attr("x", () => {
+                    if (always_up) return xScale(0);
+                    return xScale(currentData[currentData.length - 1]["value"]);
+                });
+        }
+        barExit
+            .select(".barInfo")
+            .attr("fill-opacity", 0)
+            .attr("stroke-width", function (d) {
+                return "0px";
+            })
+            .attr("x", () => {
+                if (long) return 10;
+                if (always_up) return xScale(0);
+                return xScale(currentData[currentData.length - 1]["value"]);
+            });
+        barExit.select(".label").attr("fill-opacity", 0);
+        if (config.use_img) {
+            barExit.select("circle").attr("fill-opacity", 0)
+        }
+    }
+
+    function change() {
+        yScale
+            .domain(currentData.map(d => d.type).reverse())//
+            .range([innerHeight, 0]);
+        if (animation == "linear") {
+            g.selectAll(".bar")
+                .data(currentData, function (d) {
+                    return d.type;//
+                })
+                .transition("1")
+                .ease(d3.easeLinear)
+                .duration(baseTime * update_rate * interval_time)
+                .attr("transform", function (d) {
+                    return "translate(0," + yScale(yValue(d)) + ")";
+                });
+        } else {
+            g.selectAll(".bar")
+                .data(currentData, function (d) {
+                    return d.type;//
+                })
+                .transition("1")
+                .duration(baseTime * update_rate * interval_time)
+                .attr("transform", function (d) {
+                    return "translate(0," + yScale(yValue(d)) + ")";
+                });
+        }
+    }
+
+    var i = 0;
+    var p = config.wait;
+    var update_rate = config.update_rate;
+    var inter = setInterval(function next() {
+        // pass p rounds
+        while (p) {
+            p -= 1;
+            return;
+        }
+        currentdate = time[i];
+        getCurrentData(time[i]);
+        i++;
+
+        if (i >= time.length) {
+            window.clearInterval(inter);
+        }
+    }, baseTime * interval_time);
+}
